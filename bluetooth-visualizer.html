@@ -1,0 +1,528 @@
+<html>
+<head>
+    <title>Visualizer with bluetooth assistance</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .device-info {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .device-image-container {
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            overflow: hidden;
+            position: relative;
+            border: 4px solid #0066ff;
+            animation: pulse 2s infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #preview-img {
+            width: 300px;
+            height: 300px;
+            object-fit: cover;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .upload-label {
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .toggle-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #0066ff;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .toggle-label {
+            color: #fff;
+            font-size: 16px;
+            text-shadow: 0 0 10px #0066ff;
+        }
+
+        .info-panel {
+            text-align: center;
+            font-size: 2rem;
+            text-shadow: 0 0 10px #0066ff;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 3;
+        }
+
+        .device-name {
+            cursor: pointer;
+            padding: 5px 10px;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+
+        .device-name:hover {
+            background: rgba(0, 102, 255, 0.2);
+        }
+
+        .device-name.editing {
+            background: rgba(0, 102, 255, 0.1);
+            outline: none;
+            border: 1px solid #0066ff;
+        }
+
+        #visualizer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #particles-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .audio-btn {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            padding: 10px 20px;
+            background: #0066ff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            box-shadow: 0 0 10px rgba(0, 102, 255, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .audio-btn:hover {
+            background: #0052cc;
+            box-shadow: 0 0 15px rgba(0, 102, 255, 0.7);
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="device-info">
+            <div class="device-image-container">
+                <input type="file" id="device-image-input" accept="image/*" class="hidden">
+                <label for="device-image-input" class="upload-label">
+                    <div id="device-image-preview">
+                        <img src="default_device.png" id="preview-img">
+                    </div>
+                </label>
+            </div>
+            <div class="info-panel">
+                <div class="device-name">your text here</div>
+                <div class="battery-level"></div>
+                <div class="signal-strength"></div>
+            </div>
+        </div>
+        <canvas id="visualizer"></canvas>
+        <canvas id="particles-canvas"></canvas>
+        <div class="toggle-container">
+            <span class="toggle-label">Passthrough</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="passthrough-toggle">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    <script>
+        class BluetoothScreensaver {
+            constructor() {
+                this.loadFromLocalStorage();
+                this.initBluetooth();
+                this.initVisualizer();
+                this.initParticles();
+                this.setupImageUpload();
+                this.animate();
+                this.setupAudioButton();
+                this.setupEditableText();
+                this.setupPassthrough();
+            }
+
+            async initBluetooth() {
+                if (!navigator.bluetooth) {
+                    console.log('Bluetooth not supported');
+                    return;
+                }
+
+                try {
+                    const device = await navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: ['battery_service', 'device_information']
+                    });
+
+                    device.addEventListener('gattserverdisconnected', () => {
+                        this.updateConnectionStatus(false);
+                    });
+
+                    const server = await device.gatt.connect();
+                    this.updateConnectionStatus(true, device.name);
+
+                    try {
+                        const batteryService = await server.getPrimaryService('battery_service');
+                        const batteryChar = await batteryService.getCharacteristic('battery_level');
+                        const batteryLevel = await batteryChar.readValue();
+                        this.updateBatteryLevel(batteryLevel.getUint8(0));
+                    } catch (e) {
+                        console.log('Battery service not available');
+                    }
+
+                } catch (error) {
+                    console.log('Bluetooth Error:', error);
+                }
+            }
+
+            loadFromLocalStorage() {
+                const savedName = localStorage.getItem('deviceName');
+                if (savedName) {
+                    const deviceNameElement = document.querySelector('.device-name');
+                    deviceNameElement.textContent = savedName;
+                }
+
+                const savedImage = localStorage.getItem('deviceImage');
+                if (savedImage) {
+                    const preview = document.getElementById('preview-img');
+                    preview.src = savedImage;
+                }
+            }
+
+            async initAudio() {
+                try {
+                    if (!this.audioContext) {
+                        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        this.analyser = this.audioContext.createAnalyser();
+                        this.analyser.fftSize = 256;
+                        this.bufferLength = this.analyser.frequencyBinCount;
+                        this.dataArray = new Uint8Array(this.bufferLength);
+                    }
+
+                    const stream = await navigator.mediaDevices.getDisplayMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false
+                        },
+                        video: {
+                            width: 1,
+                            height: 1
+                        }
+                    });
+
+                    stream.addEventListener('inactive', () => {
+                        console.log('Screen share ended');
+                        if (this.audioButton) {
+                            this.audioButton.style.display = 'block';
+                        }
+                    });
+
+                    const audioTrack = stream.getAudioTracks()[0];
+                    if (!audioTrack) {
+                        throw new Error('No audio track available');
+                    }
+
+                    const source = this.audioContext.createMediaStreamSource(stream);
+                    source.connect(this.analyser);
+
+                } catch (err) {
+                    console.log('Screen sharing error:', err);
+                    if (this.audioButton) {
+                        this.audioButton.style.display = 'block';
+                    }
+                    if (this.audioContext && this.audioContext.state === 'suspended') {
+                        await this.audioContext.resume();
+                    }
+                }
+            }
+
+            initVisualizer() {
+                this.canvas = document.getElementById('visualizer');
+                this.ctx = this.canvas.getContext('2d');
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                });
+            }
+
+            initParticles() {
+                this.particlesCanvas = document.getElementById('particles-canvas');
+                this.particlesCtx = this.particlesCanvas.getContext('2d');
+                this.particlesCanvas.width = window.innerWidth;
+                this.particlesCanvas.height = window.innerHeight;
+
+                this.particles = [];
+                const particleCount = 100;
+
+                for (let i = 0; i < particleCount; i++) {
+                    this.particles.push({
+                        x: Math.random() * this.particlesCanvas.width,
+                        y: Math.random() * this.particlesCanvas.height,
+                        radius: Math.random() * 2,
+                        speedX: (Math.random() - 0.5) * 2,
+                        speedY: (Math.random() - 0.5) * 2,
+                        color: `rgba(0, 102, 255, ${Math.random()})`
+                    });
+                }
+
+                window.addEventListener('resize', () => {
+                    this.particlesCanvas.width = window.innerWidth;
+                    this.particlesCanvas.height = window.innerHeight;
+                });
+            }
+
+            setupAudioButton() {
+                const button = document.createElement('button');
+                button.textContent = 'Start Audio Visualization';
+                button.className = 'audio-btn';
+                document.querySelector('.container').appendChild(button);
+                this.audioButton = button;
+
+                button.addEventListener('click', async () => {
+                    try {
+                        await this.initAudio();
+                        button.style.display = 'none';
+                    } catch (err) {
+                        console.error('Failed to initialize audio:', err);
+                    }
+                });
+            }
+
+            setupImageUpload() {
+                const input = document.getElementById('device-image-input');
+                const preview = document.getElementById('preview-img');
+
+                input.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            preview.src = e.target.result;
+                            localStorage.setItem('deviceImage', e.target.result);
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+
+            setupEditableText() {
+                const deviceName = document.querySelector('.device-name');
+                
+                deviceName.addEventListener('click', () => {
+                    deviceName.contentEditable = true;
+                    deviceName.classList.add('editing');
+                    deviceName.focus();
+                });
+
+                deviceName.addEventListener('blur', () => {
+                    deviceName.contentEditable = false;
+                    deviceName.classList.remove('editing');
+                    localStorage.setItem('deviceName', deviceName.textContent);
+                });
+
+                deviceName.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        deviceName.blur();
+                    }
+                });
+            }
+
+            async setupPassthrough() {
+                const toggle = document.getElementById('passthrough-toggle');
+                let micStream = null;
+
+                toggle.addEventListener('change', async (e) => {
+                    if (e.target.checked) {
+                        try {
+                            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        } catch (err) {
+                            console.error('Microphone access error:', err);
+                            toggle.checked = false;
+                        }
+                    } else {
+                        if (micStream) {
+                            micStream.getTracks().forEach(track => track.stop());
+                            micStream = null;
+                        }
+                    }
+                });
+            }
+
+            updateConnectionStatus(connected, deviceName = '') {
+                const deviceNameElement = document.querySelector('.device-name');
+
+                if (connected) {
+                    deviceNameElement.textContent = deviceName;
+                } else {
+                    deviceNameElement.textContent = 'No Device Connected';
+                }
+            }
+
+            updateBatteryLevel(level) {
+                const batteryElement = document.querySelector('.battery-level');
+                batteryElement.textContent = `Battery: ${level}%`;
+            }
+
+            drawVisualizer() {
+                if (!this.analyser) return;  
+
+                try {
+                    this.analyser.getByteFrequencyData(this.dataArray);
+                    
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                    const barWidth = (this.canvas.width / this.bufferLength) * 2.5;
+                    let x = 0;
+
+                    for (let i = 0; i < this.bufferLength; i++) {
+                        const barHeight = this.dataArray[i] * 3;  
+
+                        const hue = (i * 360 / this.bufferLength) + performance.now() / 50;
+                        this.ctx.fillStyle = `hsl(${hue}, 70%, 50%)`;
+                        this.ctx.fillRect(x, this.canvas.height - barHeight, barWidth, barHeight);
+
+                        x += barWidth + 1;
+                    }
+                } catch (e) {
+                    console.log('Visualizer error:', e);
+                }
+            }
+
+            updateParticles() {
+                this.particlesCtx.clearRect(0, 0, this.particlesCanvas.width, this.particlesCanvas.height);
+
+                this.particles.forEach(particle => {
+                    particle.x += particle.speedX;
+                    particle.y += particle.speedY;
+
+                    // Bounce off walls
+                    if (particle.x < 0 || particle.x > this.particlesCanvas.width) particle.speedX *= -1;
+                    if (particle.y < 0 || particle.y > this.particlesCanvas.height) particle.speedY *= -1;
+
+                    this.particlesCtx.beginPath();
+                    this.particlesCtx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+                    this.particlesCtx.fillStyle = particle.color;
+                    this.particlesCtx.fill();
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.drawVisualizer();
+                this.updateParticles();
+            }
+        }
+
+        window.addEventListener('load', () => {
+            new BluetoothScreensaver();
+        });
+    </script>
+</body>
+</html>
