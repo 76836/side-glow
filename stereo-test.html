@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stereo Audio Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #000;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        
+        .container {
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #fff;
+            text-align: center;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .subtitle {
+            color: #888;
+            text-align: center;
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .btn {
+            background: #111;
+            border: 2px solid #222;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5rem;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        
+        .btn:active {
+            transform: scale(0.98);
+        }
+        
+        .btn:hover:not(.playing) {
+            background: #1a1a1a;
+        }
+        
+        .btn.playing {
+            animation: rgbGlow 2s linear infinite;
+        }
+        
+        @keyframes rgbGlow {
+            0% { 
+                border-color: #ff0000;
+                box-shadow: 0 0 20px #ff0000, inset 0 0 20px rgba(255, 0, 0, 0.2);
+            }
+            16.66% { 
+                border-color: #ff00ff;
+                box-shadow: 0 0 20px #ff00ff, inset 0 0 20px rgba(255, 0, 255, 0.2);
+            }
+            33.33% { 
+                border-color: #0000ff;
+                box-shadow: 0 0 20px #0000ff, inset 0 0 20px rgba(0, 0, 255, 0.2);
+            }
+            50% { 
+                border-color: #00ffff;
+                box-shadow: 0 0 20px #00ffff, inset 0 0 20px rgba(0, 255, 255, 0.2);
+            }
+            66.66% { 
+                border-color: #00ff00;
+                box-shadow: 0 0 20px #00ff00, inset 0 0 20px rgba(0, 255, 0, 0.2);
+            }
+            83.33% { 
+                border-color: #ffff00;
+                box-shadow: 0 0 20px #ffff00, inset 0 0 20px rgba(255, 255, 0, 0.2);
+            }
+            100% { 
+                border-color: #ff0000;
+                box-shadow: 0 0 20px #ff0000, inset 0 0 20px rgba(255, 0, 0, 0.2);
+            }
+        }
+        
+        .icon {
+            width: 48px;
+            height: 48px;
+            background: #1a1a1a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .label {
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+        
+        .freq {
+            font-size: 0.75rem;
+            color: #666;
+        }
+        
+        .btn-auto {
+            grid-column: 1 / -1;
+            padding: 0.75rem;
+            background: #0a0a0a;
+            gap:0.75rem;
+            margin-top:3rem;
+        }
+        
+        .btn-auto .label {
+            font-size: 1rem;
+        }
+       
+
+        @media (max-width: 600px) {
+            .btn {
+                padding: 1.25rem;
+            }
+            
+            .icon {
+                width: 40px;
+                height: 40px;
+            }
+            
+            .label {
+                font-size: 1.1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Stereo Audio Test</h1>
+        <p class="subtitle">Click to test each channel, or run an automated test.</p>
+        
+        <div class="grid">
+            <button class="btn" id="leftBtn">
+                <div class="icon">L</div>
+                <div class="label">LEFT</div>
+                <div class="freq">C5 Chime</div>
+            </button>
+            
+            <button class="btn" id="rightBtn">
+                <div class="icon">R</div>
+                <div class="label">RIGHT</div>
+                <div class="freq">E5 Chime</div>
+            </button>
+            
+            <button class="btn btn-auto" id="autoBtn">
+                <div class="label">AUTO TEST</div>
+                <div class="freq">Left → Right → Left → Right → Exit</div>
+            </button>
+        </div>
+        
+    </div>
+
+    <script>
+        let audioContext = null;
+        let playing = { left: false, right: false, auto: false };
+        let autoTestRunning = false;
+
+        function initAudio() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+        }
+
+        function playChime(frequency, pan, duration = 0.8) {
+            initAudio();
+            
+            const osc = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            const panner = audioContext.createStereoPanner();
+            const masterGain = audioContext.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.value = frequency;
+            
+            const now = audioContext.currentTime;
+            gainNode.gain.setValueAtTime(0, now);
+            gainNode.gain.linearRampToValueAtTime(0.15, now + 0.05);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, now + duration);
+            
+            panner.pan.value = pan;
+            masterGain.gain.value = 0.69;
+            
+            osc.connect(gainNode);
+            gainNode.connect(panner);
+            panner.connect(masterGain);
+            masterGain.connect(audioContext.destination);
+            
+            osc.start(now);
+            osc.stop(now + duration);
+            
+            return duration * 1000;
+        }
+
+        function setPlaying(channel, isPlaying) {
+            playing[channel] = isPlaying;
+            const btn = document.getElementById(channel + 'Btn');
+            if (isPlaying) {
+                btn.classList.add('playing');
+            } else {
+                btn.classList.remove('playing');
+            }
+        }
+
+        function playChannel(channel) {
+            if (playing[channel] || autoTestRunning) return;
+            
+            setPlaying(channel, true);
+            
+            const totalDuration = playChime(
+                channel === 'left' ? 523.25 : 659.25,
+                channel === 'left' ? -1 : 1
+            );
+            
+            setTimeout(() => {
+                setPlaying(channel, false);
+            }, totalDuration + 100);
+        }
+
+        async function runAutoTest() {
+            if (autoTestRunning) return;
+            
+            autoTestRunning = true;
+            setPlaying('auto', true);
+            
+            const sequence = ['left', 'right', 'left', 'right'];
+            
+            for (let i = 0; i < sequence.length; i++) {
+                const channel = sequence[i];
+                setPlaying(channel, true);
+                
+                const duration = playChime(
+                    channel === 'left' ? 523.25 : 659.25,
+                    channel === 'left' ? -1 : 1
+                );
+                
+                await new Promise(resolve => setTimeout(resolve, duration + 100));
+                setPlaying(channel, false);
+                
+                if (i < sequence.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 30));
+                }
+            }
+            
+            autoTestRunning = false;
+            setPlaying('auto', false);
+            window.close();
+        }
+
+        document.getElementById('leftBtn').addEventListener('click', () => playChannel('left'));
+        document.getElementById('rightBtn').addEventListener('click', () => playChannel('right'));
+        document.getElementById('autoBtn').addEventListener('click', runAutoTest);
+    </script>
+</body>
+</html>
